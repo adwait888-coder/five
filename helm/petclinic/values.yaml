@@ -1,0 +1,76 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/tunisterk/spring-petclinic
+  tag: "ef9f5bf65e992961fba5ca5d98a59f0c76be7938"
+  pullPolicy: IfNotPresent
+
+petclinic:
+  containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 80
+
+configMap:
+  name: petclinic-config
+  springProfile: postgres
+  postgresUrl: jdbc:postgresql://demo-db:5432/petclinic
+
+secret:
+  name: demo-db
+  username: user
+  password: pass
+
+database:
+  name: petclinic
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: gp3
+
+  service:
+    name: demo-db
+    type: ClusterIP
+    port: 5432
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+probes:
+  liveness:
+    path: /livez
+  readiness:
+    path: /readyz
+
+ingress:
+  enabled: true
+  className: alb
+  scheme: internet-facing
+  targetType: ip
+  path: /
+  pathType: Prefix
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70

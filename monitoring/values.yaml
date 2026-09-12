@@ -1,0 +1,128 @@
+grafana:
+  enabled: true
+
+  adminPassword: petclinic-admin
+
+  service:
+    type: ClusterIP
+
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+
+kube-state-metrics:
+  enabled: true
+
+
+prometheus-node-exporter:
+  enabled: true
+
+
+additionalPrometheusRulesMap:
+  petclinic-alerts:
+    groups:
+      - name: petclinic.rules
+        rules:
+
+          - alert: PetClinicDown
+            expr: |
+              kube_deployment_status_replicas_available{
+                namespace="default",
+                deployment="petclinic"
+              } < 1
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "PetClinic is unavailable"
+              description: "PetClinic has had no available replicas for more than 2 minutes."
+
+          - alert: PostgreSQLDown
+            expr: |
+              kube_deployment_status_replicas_available{
+                namespace="default",
+                deployment="demo-db"
+              } < 1
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "PostgreSQL is unavailable"
+              description: "PostgreSQL has had no available replicas for more than 2 minutes."
+
+          - alert: PetClinicHighCPU
+            expr: |
+              100 *
+              sum(
+                rate(container_cpu_usage_seconds_total{
+                  namespace="default",
+                  pod=~"petclinic-.*",
+                  container!="",
+                  image!=""
+                }[5m])
+              )
+              /
+              sum(
+                kube_pod_container_resource_requests{
+                  namespace="default",
+                  pod=~"petclinic-.*",
+                  resource="cpu",
+                  unit="core"
+                }
+              ) > 70
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "PetClinic CPU usage is high"
+              description: "PetClinic CPU usage has been above 70% of its CPU request for 5 minutes."
+
+          - alert: PetClinicHighMemory
+            expr: |
+              100 *
+              sum(
+                container_memory_working_set_bytes{
+                  namespace="default",
+                  pod=~"petclinic-.*",
+                  container!="",
+                  image!=""
+                }
+              )
+              /
+              sum(
+                kube_pod_container_resource_limits{
+                  namespace="default",
+                  pod=~"petclinic-.*",
+                  resource="memory",
+                  unit="byte"
+                }
+              ) > 80
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "PetClinic memory usage is high"
+              description: "PetClinic memory usage has been above 80% of its memory limit for 5 minutes."

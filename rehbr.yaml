@@ -1,0 +1,17 @@
+version: 1
+
+service:
+  port: 8080
+
+verify:
+  http:
+    enabled: true
+    path: /actuator/health
+    expectStatus: 200
+
+  browser:
+    enabled: true
+    path: /
+    expectSelector: h2
+    expectText: Welcome
+    timeoutSeconds: 15

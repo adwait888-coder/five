@@ -1,178 +1,646 @@
-# Spring PetClinic Sample Application [![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/maven-build.yml)[![Build Status](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml/badge.svg)](https://github.com/spring-projects/spring-petclinic/actions/workflows/gradle-build.yml)
+# Spring PetClinic DevOps Platform on AWS EKS
 
-[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/spring-projects/spring-petclinic) [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=7517918)
+End-to-end DevOps implementation of Spring PetClinic using AWS, Terraform, Kubernetes, Helm, GitHub Actions, Argo CD, Prometheus, Grafana, and Alertmanager.
 
-## Understanding the Spring Petclinic application with a few diagrams
+This project demonstrates infrastructure provisioning, CI/CD, GitOps-based deployments, persistent storage, autoscaling, monitoring, alerting, and troubleshooting on Amazon EKS.
 
-See the presentation here:  
-[Spring Petclinic Sample Application (legacy slides)](https://speakerdeck.com/michaelisvy/spring-petclinic-sample-application?slide=20)
+---
 
-> **Note:** These slides refer to a legacy, pre–Spring Boot version of Petclinic and may not reflect the current Spring Boot–based implementation.  
-> For up-to-date information, please refer to this repository and its documentation.
+## Architecture
 
+![Spring PetClinic DevOps Architecture](docs/architecture.png)
 
-## Run Petclinic locally
+---
 
-Spring Petclinic is a [Spring Boot](https://spring.io/guides/gs/spring-boot) application built using [Maven](https://spring.io/guides/gs/maven/) or [Gradle](https://spring.io/guides/gs/gradle/).
-Java 17 or later is required for the build, and the application can run with Java 17 or newer.
+## Tech Stack
 
-You first need to clone the project locally:
+### Cloud
+- AWS
+- Amazon EKS
+- Amazon VPC
+- Amazon EBS
+- Application Load Balancer
+- IAM
+- NAT Gateway
+- Internet Gateway
+
+### Infrastructure as Code
+- Terraform
+
+### Containers and Kubernetes
+- Docker
+- Kubernetes
+- Helm
+- AWS Load Balancer Controller
+- EBS CSI Driver
+- EKS Pod Identity
+
+### CI/CD and GitOps
+- GitHub Actions
+- GitHub Container Registry
+- Argo CD
+
+### Security and Quality
+- Gitleaks
+- Trivy
+- SonarQube
+
+### Monitoring
+- Prometheus
+- Grafana
+- Alertmanager
+- Metrics Server
+- kube-state-metrics
+- node-exporter
+
+### Application
+- Spring Boot
+- Java 17
+- Maven
+- PostgreSQL 18
+
+---
+
+## Project Flow
+
+```text
+Developer
+   |
+   v
+GitHub Repository
+   |
+   v
+GitHub Actions
+   |
+   +--> Maven Build and Test
+   +--> Gitleaks
+   +--> SonarQube
+   +--> Trivy
+   +--> Helm Validation
+   |
+   v
+Docker Image
+   |
+   v
+GitHub Container Registry
+   |
+   v
+Update Helm Image SHA
+   |
+   v
+Git Repository
+   |
+   v
+Argo CD
+   |
+   v
+Amazon EKS
+```
+
+After a successful CI pipeline:
+
+1. The application is built and tested.
+2. Security scans are executed.
+3. A Docker image is built and pushed to GHCR using the Git commit SHA.
+4. The Helm image tag is updated in Git.
+5. Argo CD detects the desired-state change.
+6. Argo CD deploys the new version to Amazon EKS.
+
+---
+
+## Infrastructure
+
+Terraform provisions the AWS infrastructure required by the platform.
+
+```text
+terraform/
+├── main.tf
+├── moved.tf
+├── providers.tf
+├── variables.tf
+└── modules/
+    ├── network/
+    ├── iam/
+    ├── eks/
+    └── eks-addons-iam/
+```
+
+### Networking
+
+The platform uses a custom VPC:
+
+```text
+VPC: 10.0.0.0/16
+
+Public:
+10.0.1.0/24
+10.0.2.0/24
+
+Private:
+10.0.11.0/24
+10.0.12.0/24
+```
+
+EKS worker nodes run in private subnets. A NAT Gateway provides outbound access for private workloads, while public resources such as the Application Load Balancer use public subnets.
+
+---
+
+## Amazon EKS
+
+Terraform provisions:
+
+- EKS cluster
+- Managed node group
+- IAM roles
+- OIDC provider
+- EKS Pod Identity integration
+- EBS CSI Driver IAM configuration
+- AWS Load Balancer Controller IAM configuration
+
+Worker node configuration:
+
+```text
+Instance Type: c7i-flex.large
+Desired Nodes: 2
+Minimum Nodes: 1
+Maximum Nodes: 3
+```
+
+---
+
+## Kubernetes Application Architecture
+
+The application is deployed using Helm.
+
+```text
+helm/petclinic/
+├── Chart.yaml
+├── values.yaml
+└── templates/
+    ├── configmap.yml
+    ├── db.yml
+    ├── hpa.yml
+    ├── ingress.yml
+    ├── networkpolicy.yml
+    ├── petclinic.yml
+    ├── pvc.yml
+    ├── secrets.yml
+    └── storageclass.yml
+```
+
+Traffic flow:
+
+```text
+Internet
+   |
+   v
+AWS Application Load Balancer
+   |
+   v
+Kubernetes Ingress
+   |
+   v
+PetClinic Service
+   |
+   v
+PetClinic Pods
+   |
+   v
+demo-db Service
+   |
+   v
+PostgreSQL Pod
+   |
+   v
+PersistentVolumeClaim
+   |
+   v
+Amazon EBS gp3
+```
+
+---
+
+## Persistent Storage
+
+PostgreSQL uses Amazon EBS-backed persistent storage.
+
+```text
+StorageClass: gp3
+Provisioner: ebs.csi.aws.com
+```
+
+The EBS CSI Driver dynamically provisions the volume. EKS Pod Identity provides the AWS permissions required by the CSI controller.
+
+---
+
+## Application Startup and Health
+
+PetClinic depends on PostgreSQL. An init container waits for the database before Spring Boot starts.
+
+```text
+PostgreSQL unavailable
+        |
+        v
+Init container waits
+        |
+        v
+PostgreSQL reachable
+        |
+        v
+Spring Boot starts
+```
+
+The application uses:
+
+- Startup Probe
+- Readiness Probe
+- Liveness Probe
+
+Health endpoints:
+
+```text
+/livez
+/readyz
+```
+
+---
+
+## Horizontal Pod Autoscaling
+
+The application uses an HPA:
+
+```text
+Minimum Replicas: 1
+Maximum Replicas: 3
+CPU Target: 70%
+```
+
+Metrics Server provides the Kubernetes Resource Metrics API used by the HPA.
+
+---
+
+## Network Security
+
+A Kubernetes NetworkPolicy restricts access to PostgreSQL.
+
+Only PetClinic application pods are allowed to connect to:
+
+```text
+TCP 5432
+```
+
+---
+
+## GitOps with Argo CD
+
+Argo CD continuously reconciles the Helm-based desired state from Git.
+
+```text
+Git change
+   |
+   v
+Argo CD detects desired state
+   |
+   v
+Compare Git vs cluster
+   |
+   v
+Synchronize resources
+```
+
+Configured features:
+
+- Automated synchronization
+- Self-healing
+- Resource pruning
+- Namespace creation
+
+Application definition:
+
+```text
+argocd/petclinic-application.yml
+```
+
+---
+
+## CI/CD Pipeline
+
+GitHub Actions performs:
+
+```text
+Checkout
+   |
+   v
+Gitleaks
+   |
+   v
+Maven Build and Test
+   |
+   v
+SonarQube Analysis
+   |
+   v
+Trivy Filesystem Scan
+   |
+   v
+Helm Validation
+   |
+   v
+Docker Build
+   |
+   v
+Trivy Image Scan
+   |
+   v
+Push Image to GHCR
+   |
+   v
+Update Helm Image SHA
+   |
+   v
+Commit to Git
+   |
+   v
+Argo CD Deployment
+```
+
+Container images are published to:
+
+```text
+ghcr.io/tunisterk/spring-petclinic:<commit-sha>
+```
+
+Immutable Git commit SHA tags are used instead of `latest`.
+
+---
+
+## Monitoring and Observability
+
+The project uses `kube-prometheus-stack`.
+
+Components include:
+
+- Prometheus
+- Grafana
+- Alertmanager
+- kube-state-metrics
+- node-exporter
+
+Metrics Server is also installed for autoscaling metrics.
+
+Monitoring configuration:
+
+```text
+monitoring/
+├── values.yaml
+└── install-monitoring.sh
+```
+
+### Grafana Dashboard
+
+The custom dashboard monitors:
+
+- PetClinic running pods
+- PostgreSQL running pods
+- PetClinic CPU usage
+- CPU usage as percentage of request
+- PetClinic memory usage
+- Container restart count
+- HPA current replicas
+- HPA desired replicas
+
+### Alerting
+
+Custom Prometheus rules include:
+
+```text
+PetClinicDown
+PostgreSQLDown
+PetClinicHighCPU
+PetClinicHighMemory
+```
+
+Alert conditions include:
+
+```text
+PetClinic unavailable for 2 minutes
+PostgreSQL unavailable for 2 minutes
+PetClinic CPU above 70% for 5 minutes
+PetClinic memory above 80% for 5 minutes
+```
+
+Alert flow:
+
+```text
+Prometheus
+   |
+   v
+Alert Rule
+   |
+   v
+Pending
+   |
+   v
+Firing
+   |
+   v
+Alertmanager
+```
+
+The alerting path was tested end to end.
+
+### Monitoring Installation
 
 ```bash
-git clone https://github.com/spring-projects/spring-petclinic.git
-cd spring-petclinic
+./monitoring/install-monitoring.sh
 ```
-If you are using Maven, you can start the application on the command-line as follows:
+
+The script installs:
+
+- kube-prometheus-stack
+- Metrics Server
+
+It uses `helm upgrade --install` to keep installation repeatable.
+
+---
+
+## Repository Structure
+
+```text
+.
+├── .github/
+│   └── workflows/
+├── argocd/
+│   └── petclinic-application.yml
+├── docs/
+│   ├── architecture.png
+│   └── screenshots/
+├── helm/
+│   └── petclinic/
+├── monitoring/
+│   ├── install-monitoring.sh
+│   └── values.yaml
+├── terraform/
+│   ├── modules/
+│   ├── main.tf
+│   ├── moved.tf
+│   ├── providers.tf
+│   └── variables.tf
+├── src/
+├── Dockerfile
+├── pom.xml
+├── README.md
+└── TROUBLESHOOTING.md
+```
+
+---
+
+## Deployment Overview
+
+### 1. Provision Infrastructure
 
 ```bash
-./mvnw spring-boot:run
+cd terraform
+terraform init
+terraform plan
+terraform apply
 ```
-With Gradle, the command is as follows:
+
+### 2. Configure kubectl
 
 ```bash
-./gradlew bootRun
+aws eks update-kubeconfig \
+  --region eu-central-1 \
+  --name petclinic-cluster
 ```
 
-You can then access the Petclinic at <http://localhost:8080/>.
-
-<img width="1042" alt="petclinic-screenshot" src="https://cloud.githubusercontent.com/assets/838318/19727082/2aee6d6c-9b8e-11e6-81fe-e889a5ddfded.png">
-
-You can, of course, run Petclinic in your favorite IDE.
-See below for more details.
-
-## Building a Container
-
-There is no `Dockerfile` in this project. You can build a container image (if you have a docker daemon) using the Spring Boot build plugin:
-
-## Running the Container Image
+Verify:
 
 ```bash
-./mvnw spring-boot:build-image
-docker images | grep petclinic
-docker run -p 8080:8080 docker.io/library/spring-petclinic:latest
+kubectl get nodes
 ```
 
-## In case you find a bug/suggested improvement for Spring Petclinic
+### 3. Install Cluster Components
 
-Our issue tracker is available [here](https://github.com/spring-projects/spring-petclinic/issues).
+The EBS CSI Driver and Pod Identity related AWS infrastructure are managed through Terraform.
 
-## Database configuration
+The AWS Load Balancer Controller is installed using Helm.
 
-In its default configuration, Petclinic uses an in-memory database (H2) which
-gets populated at startup with data. The h2 console is exposed at `http://localhost:8080/h2-console`,
-and it is possible to inspect the content of the database using the `jdbc:h2:mem:<uuid>` URL. The UUID is printed at startup to the console.
-
-A similar setup is provided for MySQL and PostgreSQL if a persistent database configuration is needed. Note that whenever the database type changes, the app needs to run with a different profile: `spring.profiles.active=mysql` for MySQL or `spring.profiles.active=postgres` for PostgreSQL. See the [Spring Boot documentation](https://docs.spring.io/spring-boot/how-to/properties-and-configuration.html#howto.properties-and-configuration.set-active-spring-profiles) for more detail on how to set the active profile.
-
-You can start MySQL or PostgreSQL locally with whatever installer works for your OS or use docker:
+### 4. Deploy with Argo CD
 
 ```bash
-docker run -e MYSQL_USER=petclinic -e MYSQL_PASSWORD=petclinic -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=petclinic -p 3306:3306 mysql:9.7
+kubectl apply -f argocd/petclinic-application.yml
 ```
 
-or
+Argo CD then deploys the Helm chart.
+
+### 5. Install Monitoring
 
 ```bash
-docker run -e POSTGRES_USER=petclinic -e POSTGRES_PASSWORD=petclinic -e POSTGRES_DB=petclinic -p 5432:5432 postgres:18.4
+./monitoring/install-monitoring.sh
 ```
 
-Further documentation is provided for [MySQL](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources/db/mysql/petclinic_db_setup_mysql.txt)
-and [PostgreSQL](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources/db/postgres/petclinic_db_setup_postgres.txt).
+---
 
-Instead of vanilla `docker` you can also use the provided `docker-compose.yml` file to start the database containers. Each one has a service named after the Spring profile:
+## Troubleshooting Experience
 
-```bash
-docker compose up mysql
+This project involved real troubleshooting during implementation and cluster recreation, including:
+
+- EBS CSI Driver credential failures
+- Missing EKS Pod Identity Agent
+- PVC stuck in Pending state
+- Missing gp3 StorageClass
+- Argo CD following an older Git revision
+- PostgreSQL 18 storage path changes
+- Spring Boot liveness probe failures
+- Application/database startup race conditions
+- Missing Metrics Server after cluster recreation
+- AWS Load Balancer Controller startup issues
+- Local DNS resolution issues with the ALB hostname
+- Terraform destroy blocked by controller-created AWS resources
+- Manually installed cluster components disappearing after recreation
+
+Detailed troubleshooting is documented in:
+
+```text
+TROUBLESHOOTING.md
 ```
 
-or
+---
 
-```bash
-docker compose up postgres
+## Key DevOps Concepts Demonstrated
+
+- Infrastructure as Code
+- AWS networking
+- Amazon EKS
+- Kubernetes
+- Docker
+- Persistent storage
+- IAM
+- EKS Pod Identity
+- Kubernetes health probes
+- Horizontal Pod Autoscaling
+- Helm
+- GitOps
+- Argo CD
+- CI/CD
+- Immutable image tagging
+- Prometheus monitoring
+- Grafana dashboards
+- Alertmanager
+- DevSecOps scanning
+- Infrastructure troubleshooting
+
+---
+
+## Security Notes
+
+This repository is a learning and portfolio environment.
+
+Some choices are intentionally simplified for lab use. For example, the Grafana administrator password is currently stored in the Helm values file.
+
+In production, secrets should be managed using a dedicated secret-management solution.
+
+---
+
+## Future Improvements
+
+Possible future enhancements:
+
+- Remote Terraform state
+- Automated platform bootstrap
+- External Secrets / AWS Secrets Manager
+- Advanced Alertmanager notification routing
+- Centralized log aggregation
+- Multiple environments
+- Additional integration testing
+
+These are intentionally outside the current project scope.
+
+---
+
+## Purpose
+
+The goal of this project is to demonstrate an end-to-end DevOps workflow rather than only deploying an application.
+
+It combines:
+
+```text
+Infrastructure
++
+Application Deployment
++
+CI/CD
++
+GitOps
++
+Security
++
+Storage
++
+Monitoring
++
+Troubleshooting
 ```
 
-## Test Applications
-
-At development time we recommend you use the test applications set up as `main()` methods in `PetClinicIntegrationTests` (using the default H2 database and also adding Spring Boot Devtools), `MySqlTestApplication` and `PostgresIntegrationTests`. These are set up so that you can run the apps in your IDE to get fast feedback and also run the same classes as integration tests against the respective database. The MySql integration tests use Testcontainers to start the database in a Docker container, and the Postgres tests use Docker Compose to do the same thing.
-
-## Compiling the CSS
-
-There is a `petclinic.css` in `src/main/resources/static/resources/css`. It was generated from the `petclinic.scss` source, combined with the [Bootstrap](https://getbootstrap.com/) library. If you make changes to the `scss`, or upgrade Bootstrap, you will need to re-compile the CSS resources using the Maven profile "css", i.e. `./mvnw package -P css`. There is no build profile for Gradle to compile the CSS.
-
-## Working with Petclinic in your IDE
-
-### Prerequisites
-
-The following items should be installed in your system:
-
-- Java 17 or newer (full JDK, not a JRE)
-- [Git command line tool](https://help.github.com/articles/set-up-git)
-- Your preferred IDE
-  - Eclipse with the m2e plugin. Note: when m2e is available, there is a m2 icon in `Help -> About` dialog. If m2e is
-  not there, follow the installation process [here](https://www.eclipse.org/m2e/)
-  - [Spring Tools Suite](https://spring.io/tools) (STS)
-  - [IntelliJ IDEA](https://www.jetbrains.com/idea/)
-  - [VS Code](https://code.visualstudio.com)
-
-### Steps
-
-1. On the command line run:
-
-    ```bash
-    git clone https://github.com/spring-projects/spring-petclinic.git
-    ```
-
-1. Inside Eclipse or STS:
-
-    Open the project via `File -> Import -> Maven -> Existing Maven project`, then select the root directory of the cloned repo.
-
-    Then either build on the command line `./mvnw generate-resources` or use the Eclipse launcher (right-click on project and `Run As -> Maven install`) to generate the CSS. Run the application's main method by right-clicking on it and choosing `Run As -> Java Application`.
-
-1. Inside IntelliJ IDEA:
-
-    In the main menu, choose `File -> Open` and select the Petclinic [pom.xml](pom.xml). Click on the `Open` button.
-
-    - CSS files are generated from the Maven build. You can build them on the command line `./mvnw generate-resources` or right-click on the `spring-petclinic` project then `Maven -> Generates sources and Update Folders`.
-
-    - A run configuration named `PetClinicApplication` should have been created for you if you're using a recent Ultimate version. Otherwise, run the application by right-clicking on the `PetClinicApplication` main class and choosing `Run 'PetClinicApplication'`.
-
-1. Navigate to the Petclinic
-
-    Visit [http://localhost:8080](http://localhost:8080) in your browser.
-
-## Looking for something in particular?
-
-|Spring Boot Configuration | Class or Java property files  |
-|--------------------------|---|
-|The Main Class | [PetClinicApplication](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java) |
-|Properties Files | [application.properties](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/resources) |
-|Caching | [CacheConfiguration](https://github.com/spring-projects/spring-petclinic/blob/main/src/main/java/org/springframework/samples/petclinic/system/CacheConfiguration.java) |
-
-## Interesting Spring Petclinic branches and forks
-
-The Spring Petclinic "main" branch in the [spring-projects](https://github.com/spring-projects/spring-petclinic)
-GitHub org is the "canonical" implementation based on Spring Boot and Thymeleaf. There are
-[quite a few forks](https://spring-petclinic.github.io/docs/forks.html) in the GitHub org
-[spring-petclinic](https://github.com/spring-petclinic). If you are interested in using a different technology stack to implement the Pet Clinic, please join the community there.
-
-## Interaction with other open-source projects
-
-One of the best parts about working on the Spring Petclinic application is that we have the opportunity to work in direct contact with many Open Source projects. We found bugs/suggested improvements on various topics such as Spring, Spring Data, Bean Validation and even Eclipse! In many cases, they've been fixed/implemented in just a few days.
-Here is a list of them:
-
-| Name | Issue |
-|------|-------|
-| Spring JDBC: simplify usage of NamedParameterJdbcTemplate | [SPR-10256](https://github.com/spring-projects/spring-framework/issues/14889) and [SPR-10257](https://github.com/spring-projects/spring-framework/issues/14890) |
-| Bean Validation / Hibernate Validator: simplify Maven dependencies and backward compatibility |[HV-790](https://hibernate.atlassian.net/browse/HV-790) and [HV-792](https://hibernate.atlassian.net/browse/HV-792) |
-| Spring Data: provide more flexibility when working with JPQL queries | [DATAJPA-292](https://github.com/spring-projects/spring-data-jpa/issues/704) |
-
-## Contributing
-
-The [issue tracker](https://github.com/spring-projects/spring-petclinic/issues) is the preferred channel for bug reports, feature requests and submitting pull requests.
-
-For pull requests, editor preferences are available in the [editor config](.editorconfig) for easy use in common text editors. Read more and download plugins at <https://editorconfig.org>. All commits must include a __Signed-off-by__ trailer at the end of each commit message to indicate that the contributor agrees to the Developer Certificate of Origin.
-For additional details, please refer to the blog post [Hello DCO, Goodbye CLA: Simplifying Contributions to Spring](https://spring.io/blog/2025/01/06/hello-dco-goodbye-cla-simplifying-contributions-to-spring).
-
-## License
-
-The Spring PetClinic sample application is released under version 2.0 of the [Apache License](https://www.apache.org/licenses/LICENSE-2.0).
+into one AWS EKS platform.

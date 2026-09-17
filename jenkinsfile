@@ -9,13 +9,10 @@ pipeline{
          stage('Build with gradle'){
             steps{
                 sh '''
-                    mkdir -p target/classes
-                    chmod -R 777 target || true
-
                     docker run --rm \
                     -v ${WORKSPACE}:/app \
                     -w /app \
-                    eclipse-temurin:17-jdk-jammy ./gradlew clean bootJar \
+                     gradle:jdk17 gradle clean bootJar
                     '''
                     }
                     }

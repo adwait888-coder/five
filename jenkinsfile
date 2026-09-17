@@ -1,0 +1,23 @@
+pipeline{
+    agent any
+    stages{
+        stage('checkout'){
+            steps{
+                git url: 'https://github.com/adwait888-coder/five' , branch:'main'
+            }
+        }
+         stage('Build with gradle'){
+            steps{
+                sh '''
+                    mkdir -p target/classes
+                    chmod -R 777 target || true
+
+                    docker run --rm \
+                    -v ${WORKSPACE}:/app \
+                    -w /app \
+                    eclipse-temurin:17-jdk-jammy ./gradlew clean bootJar \
+                    '''
+                    }
+                    }
+    }
+}

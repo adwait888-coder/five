@@ -12,7 +12,8 @@ pipeline{
                     docker run --rm \
                     -v ${WORKSPACE}:/app \
                     -w /app \
-                     gradle:jdk17 gradle clean bootJar
+                    eclipse-temurin:17-jdk-jammy \
+                    ./gradlew clean bootJar
                     '''
                     }
                     }

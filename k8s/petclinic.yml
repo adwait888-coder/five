@@ -29,7 +29,7 @@ spec:
     spec:
       containers:
         - name: workload
-          image: host.minikube.internal:5010/spring-petclinic:latest
+          image: 127.0.0.1:5010/spring-petclinic:latest
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: postgres

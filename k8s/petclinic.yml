@@ -29,7 +29,8 @@ spec:
     spec:
       containers:
         - name: workload
-          image: 127.0.0.1:5010/spring-petclinic:latest
+          image: host.minikube.internal:5010/spring-petclinic:latest
+          imagePullPolicy: Always
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: postgres

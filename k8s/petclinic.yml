@@ -37,9 +37,9 @@ spec:
             - name: SPRING_DATASOURCE_URL
               value: jdbc:postgresql://demo-db:5432/petclinic
             - name: SPRING_DATASOURCE_USERNAME
-              value: postgres
+              value: user
             - name: SPRING_DATASOURCE_PASSWORD
-              value: postgres
+              value: pass
             - name: SPRING_APPLICATION_JSON
               value: |
                 {
@@ -52,11 +52,11 @@ spec:
             httpGet:
               path: /livez
               port: http
-            initialDelaySeconds: 30
+            initialDelaySeconds: 45
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
-            initialDelaySeconds: 20
+            initialDelaySeconds: 30
             periodSeconds: 10

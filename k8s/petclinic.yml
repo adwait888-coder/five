@@ -27,10 +27,12 @@ spec:
       labels:
         app: petclinic
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: workload
           image: ghcr.io/adwait888-coder/spring-petclinic:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: postgres

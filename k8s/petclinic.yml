@@ -29,7 +29,7 @@ spec:
     spec:
       containers:
         - name: workload
-          image: 127.0.0.1:5010/spring-petclinic:latest
+          image: ghcr.io/adwait888-coder/spring-petclinic:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: SPRING_PROFILES_ACTIVE
